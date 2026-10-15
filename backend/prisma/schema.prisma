@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Estados posibles de una cita
+enum EstadoCita {
+  PENDIENTE
+  CONFIRMADA
+  EN_ESPERA
+  ATENDIDA
+  CANCELADA
+  NO_ASISTIO
+}
+
+// Estados para la cola de espera de clientes que llegan sin cita
+enum EstadoCola {
+  ESPERANDO
+  ATENDIENDO
+  CANCELADO
+  COMPLETADO
+}
+
+model Cliente {
+  id            String       @id @default(uuid())
+  nombre        String
+  telefono      String       @unique // Clave para WhatsApp
+  fechaRegistro DateTime     @default(now()) @map("fecha_registro")
+  citas         Cita[]
+  colaEspera    ColaEspera[]
+
+  @@map("clientes")
+}
+
+model Barbero {
+  id       String    @id @default(uuid())
+  nombre   String
+  telefono String?
+  activo   Boolean   @default(true)
+  citas    Cita[]
+  horarios Horario[]
+
+  @@map("barberos")
+}
+
+model Servicio {
+  id         String       @id @default(uuid())
+  nombre     String
+  precio     Decimal      @db.Decimal(10, 2)
+  duracion   Int          @default(30) // En minutos (bloques estándar de 30)
+  activo     Boolean      @default(true)
+  citas      Cita[]
+  colaEspera ColaEspera[]
+
+  @@map("servicios")
+}
+
+model Horario {
+  id         String   @id @default(uuid())
+  barberoId  String   @map("barbero_id")
+  diaSemana  Int      @map("dia_semana") // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
+  horaInicio String   @map("hora_inicio") // Formato "HH:mm", ej: "10:00"
+  horaFin    String   @map("hora_fin")    // Formato "HH:mm", ej: "20:00"
+  activo     Boolean  @default(true)
+
+  barbero    Barbero  @relation(fields: [barberoId], references: [id], onDelete: Cascade)
+
+  @@map("horarios")
+}
+
+model Cita {
+  id         String     @id @default(uuid())
+  clienteId  String     @map("cliente_id")
+  barberoId  String     @map("barbero_id")
+  servicioId String     @map("servicio_id")
+  fecha      DateTime   @db.Date // Guarda solo la fecha YYYY-MM-DD
+  horaInicio String     @map("hora_inicio") // Formato "HH:mm", ej: "16:00"
+  horaFin    String     @map("hora_fin")    // Formato "HH:mm", ej: "16:30"
+  estado     EstadoCita @default(PENDIENTE)
+  creadaEn   DateTime   @default(now()) @map("creada_en")
+
+  cliente    Cliente    @relation(fields: [clienteId], references: [id])
+  barbero    Barbero    @relation(fields: [barberoId], references: [id])
+  servicio   Servicio   @relation(fields: [servicioId], references: [id])
+
+  // Restricción: un mismo barbero no puede tener dos citas a la misma fecha y hora de inicio
+  @@unique([barberoId, fecha, horaInicio])
+  @@map("citas")
+}
+
+model ColaEspera {
+  id          String     @id @default(uuid())
+  clienteId   String     @map("cliente_id")
+  servicioId  String     @map("servicio_id")
+  fecha       DateTime   @default(now()) @db.Date
+  horaLlegada DateTime   @default(now()) @map("hora_llegada")
+  estado      EstadoCola @default(ESPERANDO)
+
+  cliente     Cliente    @relation(fields: [clienteId], references: [id])
+  servicio    Servicio   @relation(fields: [servicioId], references: [id])
+
+  @@map("cola_espera")
+}
